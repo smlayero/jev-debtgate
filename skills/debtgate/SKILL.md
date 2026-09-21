@@ -1,9 +1,9 @@
 ---
 name: debtgate
-description: Assess technical debt with Debtgate (Jev): pay-down vs add-debt, god files, timeout/skip workarounds, and model tier. Use when refactoring, splitting a large file, claiming a flake is fixed, opening a PR, or the user mentions tech debt, god file, or merge gates.
+description: Assess technical debt with jev-debtgate (Jev): pay-down vs add-debt, god files, timeout/skip workarounds, and model tier. Use when refactoring, splitting a large file, claiming a flake is fixed, opening a PR, or the user mentions tech debt, god file, or merge gates.
 ---
 
-# Debtgate
+# jev-debtgate
 
 Local collectors measure git/file facts. TypeSafe Jev only judges the summary. Policy maps confidence to `allow | review | block`.
 
@@ -17,9 +17,9 @@ Local collectors measure git/file facts. TypeSafe Jev only judges the summary. P
 Prefer MCP tools. If MCP is missing, run:
 
 ```bash
-npx debtgate diff --json
-npx debtgate gate --json
-npx debtgate file path/to/file.ts --json
+npx -y github:smlayero/jev-debtgate diff --json
+npx -y github:smlayero/jev-debtgate gate --json
+npx -y github:smlayero/jev-debtgate file path/to/file.ts --json
 ```
 
 Need `TYPESAFE_API_KEY` set to **the user's** TypeSafe key (env, `.env`, or `.cursor/mcp.json`). Never read a key from the repo. `--collect-only` skips Jev and is not a verdict.
@@ -34,6 +34,7 @@ Need `TYPESAFE_API_KEY` set to **the user's** TypeSafe key (env, `.env`, or `.cu
 - `kind=generated` or `data_table`: do not hand-split.
 - `split_axis=test_first` or high `missing_tests`: add tests before extracting files.
 - Low `confidence_floor` (< 0.5): escalate to a human or a stronger coding model. Do not auto-split.
+- If `fail_open` is true, Jev was down: treat as `review`, do not invent a pass.
 
 ## Output
 

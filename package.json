@@ -1,6 +1,6 @@
 {
   "name": "jev-debtgate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Jev-powered technical debt gate for coding agents and CI. Collects git/file metrics locally, asks TypeSafe Jev typed questions, then applies confidence policy.",
   "type": "module",
   "bin": {
@@ -15,13 +15,18 @@
     "dist",
     "skills",
     "examples",
+    "templates",
     "action.yml",
     "README.md",
     "README.zh.md",
     "LICENSE",
-    ".env.example"
+    ".env.example",
+    ".debtgate.json.example",
+    ".cursor/mcp.json.example",
+    "scripts/prepare.mjs"
   ],
   "scripts": {
+    "prepare": "node scripts/prepare.mjs",
     "build": "tsc",
     "test": "tsc && node --test dist/*.test.js && node scripts/check-secrets.mjs",
     "live": "node scripts/live-e2e.mjs",

@@ -18,6 +18,14 @@ inputs:
     description: "If true, skip Jev (collectors only)"
     required: false
     default: "false"
+  shadow:
+    description: "If true, print the verdict but always exit 0"
+    required: false
+    default: "true"
+  fail-open:
+    description: "If true, Jev outages become review + exit 0"
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -26,7 +34,7 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        npm install --omit=dev
+        npm install
         npm run build
     - name: Run Debtgate
       shell: bash
@@ -41,6 +49,12 @@ runs:
         BASE="${{ inputs.base }}"
         EXTRA=""
         if [ "${{ inputs.collect-only }}" = "true" ]; then
-          EXTRA="--collect-only"
+          EXTRA="$EXTRA --collect-only"
+        fi
+        if [ "${{ inputs.shadow }}" = "true" ]; then
+          EXTRA="$EXTRA --shadow"
+        fi
+        if [ "${{ inputs.fail-open }}" = "true" ]; then
+          EXTRA="$EXTRA --fail-open"
         fi
         node "${{ github.action_path }}/dist/cli.js" "$CMD" --base "$BASE" --format github $EXTRA

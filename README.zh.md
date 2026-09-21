@@ -61,52 +61,51 @@ jev-debtgate 不问「代码好不好看」，只问流程里能执行的问题�
 
 ---
 
-## 安装
+## 接入
 
-使用**你自己的** TypeSafe API Key。本仓库不附带密钥。
+使用**你自己的** TypeSafe API Key。本仓库不附带密钥。需要 Node 20+。
 
-```bash
-git clone https://github.com/smlayero/jev-debtgate.git
-cd jev-debtgate
-npm install
-npm run build
-cp .env.example .env    # 从 https://console.typesafe.ai 粘贴你的 key
-npx jev-debtgate doctor
-```
+实战第一周：保持 `shadow` 和 `failOpen` 打开。闸门会打印结论，但不会把任务判失败。等它和你的仓库对上了，再关掉。
 
-不要提交 `.env` 或 `.cursor/mcp.json`。命令行也可以用 `debtgate`。
-
----
-
-## 命令
+### 1. 在你的仓库里一条命令
 
 ```bash
-npx jev-debtgate diff                     # 相对 HEAD 的未提交改动
-npx jev-debtgate diff --base origin/main --json
-npx jev-debtgate gate                     # 假修复 / workaround 闸门
-npx jev-debtgate file src/app.ts          # 职责是否过于集中 / 上帝文件
-npx jev-debtgate file src/app.ts --collect-only
-npx jev-debtgate init
-npx jev-debtgate doctor
+npx -y github:smlayero/jev-debtgate init
 ```
 
-| 退出码 | 含义 |
-| --- | --- |
-| `0` | 放行 |
-| `1` | 复核 |
-| `2` | 拦截 |
-| `3` | 错误（缺 key、不是 git 仓库等） |
+会写入：
 
-`--collect-only` 只跑本地采集，不调用 Jev，那是度量，不是裁定。
+- `.cursor/mcp.json.example` — 用 `npx` 接 Cursor MCP
+- `.cursor/skills/debtgate/` — 给 Agent 的说明
+- `.debtgate.json` — 阈值、`shadow`、`failOpen`
+- `.github/workflows/jev-debtgate.yml` — PR 闸门（默认 shadow）
 
----
+然后复制 MCP 示例，填入**你的** key：
 
-## 在 Cursor 里用
+```bash
+cp .cursor/mcp.json.example .cursor/mcp.json
+npx -y github:smlayero/jev-debtgate doctor
+```
 
-1. `npm run build`
-2. 复制 `.cursor/mcp.json.example` 为 `.cursor/mcp.json`
-3. 在 `env.TYPESAFE_API_KEY` 填入**你的** key
-4. 把 `args` 指到本仓的 `dist/mcp.js`
+不要提交 `.env` 或 `.cursor/mcp.json`。
+
+### 2. Cursor（MCP）
+
+`init` 之后的 `.cursor/mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "jev-debtgate": {
+      "command": "npx",
+      "args": ["-y", "github:smlayero/jev-debtgate", "mcp"],
+      "env": {
+        "TYPESAFE_API_KEY": ""
+      }
+    }
+  }
+}
+```
 
 | 工具 | 何时调用 |
 | --- | --- |
@@ -114,13 +113,30 @@ npx jev-debtgate doctor
 | `debt_workaround_gate` | 测试刚因一个很小的改动变绿时 |
 | `debt_assess_file` | 模块代码堆在一个文件里，或准备拆文件时 |
 
-`.cursor/skills/debtgate/SKILL.md` 会要求 Agent 遵守闸门结果。
+如果你在改本仓库，请把 Cursor 指到 `node dist/mcp.js`（见本仓的 `.cursor/mcp.json.example`）。
 
----
+### 3. 命令行
 
-## 在 GitHub Actions 里用
+```bash
+npx -y github:smlayero/jev-debtgate diff
+npx -y github:smlayero/jev-debtgate diff --base origin/main --json
+npx -y github:smlayero/jev-debtgate gate --shadow --fail-open
+npx -y github:smlayero/jev-debtgate file src/app.ts
+npx -y github:smlayero/jev-debtgate doctor
+```
 
-传入**你自己的**仓库 Secret。`api-key` 为空时任务失败。
+| 退出码 | 含义 |
+| --- | --- |
+| `0` | 放行（shadow / fail-open 也是 0） |
+| `1` | 复核 |
+| `2` | 拦截 |
+| `3` | 错误（缺 key、不是 git 仓库等） |
+
+`--collect-only` 只跑本地采集，不调用 Jev，那是度量，不是裁定。
+
+### 4. GitHub Action
+
+把 `TYPESAFE_API_KEY` 存成仓库 Secret。`api-key` 为空时任务失败。
 
 ```yaml
 - uses: actions/setup-node@v4
@@ -130,7 +146,38 @@ npx jev-debtgate doctor
   with:
     api-key: ${{ secrets.TYPESAFE_API_KEY }}
     command: diff
-    base: ${{ github.event.pull_request.base.sha }}
+    base: origin/${{ github.base_ref }}
+    shadow: "true"
+    fail-open: "true"
+```
+
+要做成硬闸门时，把 `shadow` 和 `fail-open` 改成 `"false"`。
+
+### 5. 配置和库
+
+`.debtgate.json`：
+
+```json
+{
+  "base": "HEAD",
+  "shadow": true,
+  "failOpen": true,
+  "thresholds": { "auto": 0.85, "review": 0.5 }
+}
+```
+
+命令行和环境变量优先于配置文件：`--shadow`、`--fail-open`、`DEBTGATE_SHADOW`、`DEBTGATE_FAIL_OPEN`。
+
+作为库：
+
+```ts
+import { assessDiff } from "jev-debtgate";
+
+const report = await assessDiff({
+  cwd: process.cwd(),
+  base: "origin/main",
+  failOpen: true,
+});
 ```
 
 ---
@@ -157,6 +204,8 @@ npx jev-debtgate file examples/god-file/src/kitchen-sink.ts --collect-only --jso
 | `JEV_MODEL` | `jev-latest` | 模型别名 |
 | `DEBTGATE_AUTO` | `0.85` | 自动放行阈值 |
 | `DEBTGATE_REVIEW` | `0.5` | 低于此值则复核 |
+| `DEBTGATE_SHADOW` | 未设置 | 始终退出 0 |
+| `DEBTGATE_FAIL_OPEN` | 未设置 | Jev 不可用时复核并退出 0 |
 | `DEBTGATE_CWD` | 进程 cwd | MCP 工作树 |
 
 ```bash

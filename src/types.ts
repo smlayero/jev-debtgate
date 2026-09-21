@@ -83,6 +83,8 @@ export type Report = {
   pack: string;
   tool: "debt_assess_diff" | "debt_assess_file" | "debt_workaround_gate";
   skipped_jev?: boolean;
+  fail_open?: boolean;
+  shadow?: boolean;
   model?: string;
   usage?: { input_tokens: number; output_tokens: number };
   metrics: DiffMetrics | FileMetrics | Record<string, unknown>;

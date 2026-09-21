@@ -61,52 +61,51 @@ Read `verdict.action` and `confidence_floor`. Do not ship on argmax alone.
 
 ---
 
-## Install
+## Connect it
 
-Bring **your own** TypeSafe API key. This repository never includes one.
+Bring **your own** TypeSafe API key. This repository never includes one. Node 20+ is required.
 
-```bash
-git clone https://github.com/smlayero/jev-debtgate.git
-cd jev-debtgate
-npm install
-npm run build
-cp .env.example .env    # paste your key from https://console.typesafe.ai
-npx jev-debtgate doctor
-```
+First week in a real repo: keep `shadow` and `failOpen` on. The gate prints a verdict but does not fail the job. Turn them off after it matches how you work.
 
-Do not commit `.env` or `.cursor/mcp.json`. The CLI is also available as `debtgate`.
-
----
-
-## Commands
+### 1. One command in your repo
 
 ```bash
-npx jev-debtgate diff                     # current uncommitted diff vs HEAD
-npx jev-debtgate diff --base origin/main --json
-npx jev-debtgate gate                     # fake-fix / workaround gate
-npx jev-debtgate file src/app.ts          # concentration / god file
-npx jev-debtgate file src/app.ts --collect-only
-npx jev-debtgate init
-npx jev-debtgate doctor
+npx -y github:smlayero/jev-debtgate init
 ```
 
-| Exit code | Meaning |
-| --- | --- |
-| `0` | allow |
-| `1` | review |
-| `2` | block |
-| `3` | error (missing key, not a git repo, …) |
+This writes:
 
-`--collect-only` runs collectors without Jev. That is measurement, not a verdict.
+- `.cursor/mcp.json.example` — Cursor MCP via `npx`
+- `.cursor/skills/debtgate/` — agent instructions
+- `.debtgate.json` — thresholds, `shadow`, `failOpen`
+- `.github/workflows/jev-debtgate.yml` — PR gate (starts in shadow)
 
----
+Then copy the MCP example and paste **your** key:
 
-## In Cursor
+```bash
+cp .cursor/mcp.json.example .cursor/mcp.json
+npx -y github:smlayero/jev-debtgate doctor
+```
 
-1. `npm run build`
-2. Copy `.cursor/mcp.json.example` → `.cursor/mcp.json`
-3. Put **your** key in `env.TYPESAFE_API_KEY`
-4. Point `args` at this repo’s `dist/mcp.js`
+Do not commit `.env` or `.cursor/mcp.json`.
+
+### 2. Cursor (MCP)
+
+`.cursor/mcp.json` after `init`:
+
+```json
+{
+  "mcpServers": {
+    "jev-debtgate": {
+      "command": "npx",
+      "args": ["-y", "github:smlayero/jev-debtgate", "mcp"],
+      "env": {
+        "TYPESAFE_API_KEY": ""
+      }
+    }
+  }
+}
+```
 
 | Tool | Call it when |
 | --- | --- |
@@ -114,13 +113,30 @@ npx jev-debtgate doctor
 | `debt_workaround_gate` | Tests just turned green after a tiny change |
 | `debt_assess_file` | Most of a module lives in one file, or you are about to split it |
 
-The skill in `.cursor/skills/debtgate/SKILL.md` tells the agent to obey the gate.
+If you are hacking on this repository, point Cursor at `node dist/mcp.js` instead (see `.cursor/mcp.json.example` here).
 
----
+### 3. CLI
 
-## In GitHub Actions
+```bash
+npx -y github:smlayero/jev-debtgate diff
+npx -y github:smlayero/jev-debtgate diff --base origin/main --json
+npx -y github:smlayero/jev-debtgate gate --shadow --fail-open
+npx -y github:smlayero/jev-debtgate file src/app.ts
+npx -y github:smlayero/jev-debtgate doctor
+```
 
-Pass **your** repository secret. An empty `api-key` fails the job.
+| Exit code | Meaning |
+| --- | --- |
+| `0` | allow (also shadow / fail-open) |
+| `1` | review |
+| `2` | block |
+| `3` | error (missing key, not a git repo, …) |
+
+`--collect-only` runs collectors without Jev. That is measurement, not a verdict.
+
+### 4. GitHub Action
+
+Store `TYPESAFE_API_KEY` as a repository secret. An empty `api-key` fails the job.
 
 ```yaml
 - uses: actions/setup-node@v4
@@ -130,7 +146,38 @@ Pass **your** repository secret. An empty `api-key` fails the job.
   with:
     api-key: ${{ secrets.TYPESAFE_API_KEY }}
     command: diff
-    base: ${{ github.event.pull_request.base.sha }}
+    base: origin/${{ github.base_ref }}
+    shadow: "true"
+    fail-open: "true"
+```
+
+Set `shadow` and `fail-open` to `"false"` when you want a hard gate.
+
+### 5. Config and library
+
+`.debtgate.json`:
+
+```json
+{
+  "base": "HEAD",
+  "shadow": true,
+  "failOpen": true,
+  "thresholds": { "auto": 0.85, "review": 0.5 }
+}
+```
+
+Flags and env win over the file: `--shadow`, `--fail-open`, `DEBTGATE_SHADOW`, `DEBTGATE_FAIL_OPEN`.
+
+Programmatic:
+
+```ts
+import { assessDiff } from "jev-debtgate";
+
+const report = await assessDiff({
+  cwd: process.cwd(),
+  base: "origin/main",
+  failOpen: true,
+});
 ```
 
 ---
@@ -157,6 +204,8 @@ npx jev-debtgate file examples/god-file/src/kitchen-sink.ts --collect-only --jso
 | `JEV_MODEL` | `jev-latest` | Model alias |
 | `DEBTGATE_AUTO` | `0.85` | Auto-allow floor |
 | `DEBTGATE_REVIEW` | `0.5` | Below this, review |
+| `DEBTGATE_SHADOW` | unset | Always exit 0 |
+| `DEBTGATE_FAIL_OPEN` | unset | Jev outage → review + exit 0 |
 | `DEBTGATE_CWD` | process cwd | Working tree for MCP |
 
 ```bash
