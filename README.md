@@ -2,28 +2,62 @@
 
 English · [中文](README.zh.md)
 
-A gate for **technical debt**.
+**jev-debtgate** is a gate for technical debt in agent and CI workflows.
 
-Coding agents write code quickly. They also leave timeout bumps, SQL string concat, and “one more function” in a file that already does too much. **jev-debtgate** exists to stop that from being called a cleanup.
+It does not rewrite your codebase. It looks at a git diff or a single file, then returns a typed verdict: `allow`, `review`, or `block`. Local scripts collect facts. [TypeSafe Jev](https://typesafe.ai) answers a fixed set of questions. Policy in this repo turns those answers into a gate.
 
-It looks at a diff or a file and answers a few questions your process actually needs:
-
-- Are we paying debt down, or adding more?
-- Is this a real fix, or a workaround that hides the symptom?
-- Is this file a pile of mixed responsibilities, generated output, or something we should leave alone?
-- If work continues, should a cheap model keep going, or do we need a stronger one?
-
-The verdict is `allow`, `review`, or `block`. Code does not merge itself on a guess.
+The point is simple: a change that makes tests green, or a file that “works,” is not automatically a cleanup. If the change borrows against the future, the gate should say so before merge.
 
 ---
 
-## How it thinks
+## What technical debt is
 
-1. **Facts stay local.** Line counts, import mix, git churn, and patterns like skipped tests or concatenated SQL are collected on your machine. The full repo is not uploaded.
-2. **Judgment goes to [TypeSafe Jev](https://typesafe.ai).** Jev is a decision model: you send state plus typed questions, and you get probabilities—not a review essay.
-3. **Policy is ours.** Confidence decides the gate. A high-confidence workaround is blocked. Generated files are not “split as debt pay-down.” If the important questions are uncertain, the result is `review`, not an automatic refactor.
+**Technical debt** is the extra cost you accept now so you can ship, knowing you will have to repay it later—with interest. The name is already the standard term in software engineering. Nearby words (maintainability, code smell, quality issue) describe symptoms or attributes. They do not replace the idea of a **loan**: you took a shortcut, and tomorrow’s change is more expensive because of it.
 
-Use `verdict.action` and `confidence_floor`. Do not ship on the first-ranked `choice` alone.
+We keep saying technical debt on purpose. There is no more unified name that still means “borrow now, pay later.” In this project it includes:
+
+- a design you know is incomplete
+- a workaround that hides a failure instead of fixing it
+- responsibilities piled into one file until the next edit is unsafe
+- missing tests, weaker types, unsafe queries, copy-paste, leftover APIs
+
+A rename, a generated file, or a cohesive (even large) module is not automatically debt.
+
+---
+
+## How this project judges it
+
+jev-debtgate never asks “is the code ugly?” It asks questions a process can act on.
+
+**1. Collect facts on your machine**
+
+Line count, import mix, function sizes, 90-day churn, and patterns such as skipped tests, empty `catch`, concatenated SQL, or a test timeout raised with no production change. The full repository is not uploaded.
+
+**2. Ask Jev the same questions every time**
+
+On a **diff**:
+
+- Are we paying debt down, adding it, hiding a symptom, mixing both, or doing unrelated product work?
+- If debt is present, what kind is it (tests, types, security, concentration, architecture, …)?
+- Is this a workaround? How severe is shipping it? Can it auto-merge? Which model tier should continue?
+
+On a **file**:
+
+- Are too many jobs in one place?
+- Is it a god file, generated output, a data table, or a cohesive module?
+- Should we split now, along which axis, or lock tests first?
+
+**3. Apply policy to confidence, not to the top choice**
+
+| Verdict | Meaning |
+| --- | --- |
+| `allow` | No meaningful debt signal, or a safe pay-down |
+| `review` | Uncertain, mixed, or a split that still needs a human |
+| `block` | High-confidence workaround or unsafe construction; do not label it “debt pay-down” |
+
+Generated files and tabular dumps are not split as cleanup. If the *decision* questions are uncertain, the result is `review`, not an automatic refactor.
+
+Read `verdict.action` and `confidence_floor`. Do not ship on argmax alone.
 
 ---
 
@@ -50,7 +84,7 @@ Do not commit `.env` or `.cursor/mcp.json`. The CLI is also available as `debtga
 npx jev-debtgate diff                     # current uncommitted diff vs HEAD
 npx jev-debtgate diff --base origin/main --json
 npx jev-debtgate gate                     # fake-fix / workaround gate
-npx jev-debtgate file src/app.ts          # god-file / concentration
+npx jev-debtgate file src/app.ts          # concentration / god file
 npx jev-debtgate file src/app.ts --collect-only
 npx jev-debtgate init
 npx jev-debtgate doctor
