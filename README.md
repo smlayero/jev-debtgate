@@ -31,7 +31,7 @@ jev-debtgate never asks “is the code ugly?” It asks questions a process can 
 
 **1. Collect facts on your machine**
 
-Line count, import mix, function sizes, 90-day churn, and patterns such as skipped tests, empty `catch`, concatenated SQL, or a test timeout raised with no production change. The full repository is not uploaded.
+A real AST pass (via [ast-grep](https://ast-grep.github.io)) parses the changed files, not a line regex over the diff. TypeScript/JavaScript ship in the core parser; Python, Go, Rust, Java, Kotlin, C#, Ruby, PHP, Swift, Scala, C, and C++ register as extra grammars. Findings include skipped tests, empty `catch` / swallowed errors, concatenated SQL, type escapes, and a test timeout raised with no production change. Function sizes and import mix also come from the tree. The full repository is not uploaded.
 
 **2. Ask Jev the same questions every time**
 
@@ -70,7 +70,7 @@ First week in a real repo: keep `shadow` and `failOpen` on. The gate prints a ve
 ### 1. One command in your repo
 
 ```bash
-npx -y github:smlayero/jev-debtgate init
+npx -y jev-debtgate init
 ```
 
 This writes:
@@ -84,7 +84,7 @@ Then copy the MCP example and paste **your** key:
 
 ```bash
 cp .cursor/mcp.json.example .cursor/mcp.json
-npx -y github:smlayero/jev-debtgate doctor
+npx -y jev-debtgate doctor
 ```
 
 Do not commit `.env` or `.cursor/mcp.json`.
@@ -98,7 +98,7 @@ Do not commit `.env` or `.cursor/mcp.json`.
   "mcpServers": {
     "jev-debtgate": {
       "command": "npx",
-      "args": ["-y", "github:smlayero/jev-debtgate", "mcp"],
+      "args": ["-y", "jev-debtgate", "mcp"],
       "env": {
         "TYPESAFE_API_KEY": ""
       }
@@ -118,11 +118,11 @@ If you are hacking on this repository, point Cursor at `node dist/mcp.js` instea
 ### 3. CLI
 
 ```bash
-npx -y github:smlayero/jev-debtgate diff
-npx -y github:smlayero/jev-debtgate diff --base origin/main --json
-npx -y github:smlayero/jev-debtgate gate --shadow --fail-open
-npx -y github:smlayero/jev-debtgate file src/app.ts
-npx -y github:smlayero/jev-debtgate doctor
+npx -y jev-debtgate diff
+npx -y jev-debtgate diff --base origin/main --json
+npx -y jev-debtgate gate --shadow --fail-open
+npx -y jev-debtgate file src/app.ts
+npx -y jev-debtgate doctor
 ```
 
 | Exit code | Meaning |

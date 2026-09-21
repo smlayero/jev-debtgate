@@ -1,8 +1,19 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import type { DiffMetrics } from "../types.js";
+import type { DiffMetrics, FileMetrics } from "../types.js";
 import { truncate } from "../util.js";
+import {
+  analyzeSource,
+  compareSources,
+  emptyDiffHits,
+  mergeHits,
+  type DiffHits,
+} from "./ast.js";
+import { isCodeFile } from "./langs.js";
+
+export { isCodeFile } from "./langs.js";
+export { analyzeSource, compareSources } from "./ast.js";
 
 export function git(
   args: string[],
@@ -28,57 +39,62 @@ export function assertGitRepo(cwd: string): void {
   }
 }
 
-const TIMEOUT = /timeout(?:\s*[:=]\s*|\s+)\d{3,}/i;
-const TIMEOUT_ARG = /^\s*\}\s*,\s*\d{3,}\s*\)\s*;?\s*$/;
-const SKIP =
-  /\b(it|test|describe)\.skip\b|\bxtest\b|\bxit\b|@pytest\.mark\.skip|\.skip\(/;
-const EMPTY_CATCH = /catch\s*\([^)]*\)\s*\{\s*\}/g;
-function isSqlConcat(line: string): boolean {
-  const sql = /\b(SELECT|INSERT|UPDATE|DELETE)\b/i.test(line);
-  const call = /\b(execute|query|raw)\s*\(/i.test(line);
-  const concat = line.includes("+") || line.includes("${");
-  return sql && concat && (call || concat);
-}
-const TYPE_ESCAPE = /@ts-ignore|@ts-expect-error|\bas any\b|: any\b|eslint-disable.*any/;
-const SLEEP = /\b(sleep|setTimeout|time\.sleep)\s*\(/;
-
-function addedLines(diff: string): string[] {
-  return diff
-    .split("\n")
-    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-    .map((l) => l.slice(1));
+function gitShow(cwd: string, rev: string, file: string): string | null {
+  const posix = file.replaceAll("\\", "/");
+  const r = git(["show", `${rev}:${posix}`], cwd);
+  return r.ok ? r.stdout : null;
 }
 
-function hits(pattern: RegExp, lines: string[], label: string): string[] {
-  const out: string[] = [];
-  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
-  const re = new RegExp(pattern.source, flags);
-  for (const line of lines) {
-    if (re.test(line)) out.push(`${label}: ${line.trim().slice(0, 160)}`);
-    re.lastIndex = 0;
+function workingTree(cwd: string, file: string): string | null {
+  const abs = path.join(cwd, file);
+  if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+    return fs.readFileSync(abs, "utf8");
   }
-  return out.slice(0, 12);
+  return null;
 }
 
-export function analyzeDiffText(diff: string): Omit<
-  DiffMetrics,
-  "file_count" | "added" | "removed"
-> {
-  const added = addedLines(diff);
-  return {
-    timeout_bumps: [
-      ...hits(TIMEOUT, added, "timeout"),
-      ...hits(TIMEOUT_ARG, added, "timeout_arg"),
-    ],
-    skip_added: hits(SKIP, added, "skip"),
-    empty_catch: hits(EMPTY_CATCH, added, "empty_catch"),
-    sql_concat: added
-      .filter(isSqlConcat)
-      .slice(0, 12)
-      .map((line) => `sql_concat: ${line.trim().slice(0, 160)}`),
-    type_escape: hits(TYPE_ESCAPE, added, "type_escape"),
-    sleep_added: hits(SLEEP, added, "sleep"),
-  };
+function parseNameStatus(text: string): { status: string; file: string }[] {
+  const rows: { status: string; file: string }[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    const status = parts[0]?.trim() ?? "";
+    const file = parts[parts.length - 1]?.trim();
+    if (!file || status.startsWith("D")) continue;
+    rows.push({ status: status[0] ?? "M", file });
+  }
+  return rows;
+}
+
+function parseNumstat(
+  text: string,
+): { path: string; added: number; removed: number }[] {
+  const rows: { path: string; added: number; removed: number }[] = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
+    if (!m) continue;
+    rows.push({
+      path: m[3]!.trim(),
+      added: m[1] === "-" ? 0 : Number(m[1]),
+      removed: m[2] === "-" ? 0 : Number(m[2]),
+    });
+  }
+  return rows;
+}
+
+function analyzeChangedFiles(cwd: string, base: string): DiffHits {
+  const names = git(["diff", "--name-status", "--no-renames", base], cwd);
+  const hits = emptyDiffHits();
+  if (!names.ok) return hits;
+  let scanned = 0;
+  for (const row of parseNameStatus(names.stdout)) {
+    if (!isCodeFile(row.file)) continue;
+    if (scanned++ >= 40) break;
+    const newer = workingTree(cwd, row.file);
+    const older = row.status === "A" ? null : gitShow(cwd, base, row.file);
+    mergeHits(hits, compareSources(row.file, older, newer));
+  }
+  return hits;
 }
 
 export function collectDiff(input: {
@@ -104,7 +120,7 @@ export function collectDiff(input: {
     throw new Error(raw.stderr || "git diff failed");
   }
   const diff = raw.stdout;
-  const heuristics = analyzeDiffText(diff);
+  const analysis = analyzeChangedFiles(input.cwd, base);
   const files = parseNumstat(numstat.ok ? numstat.stdout : "");
   const added = files.reduce((s, f) => s + f.added, 0);
   const removed = files.reduce((s, f) => s + f.removed, 0);
@@ -112,7 +128,13 @@ export function collectDiff(input: {
     file_count: files.length,
     added,
     removed,
-    ...heuristics,
+    timeout_bumps: analysis.timeout_bumps,
+    skip_added: analysis.skip_added,
+    empty_catch: analysis.empty_catch,
+    sql_concat: analysis.sql_concat,
+    type_escape: analysis.type_escape,
+    sleep_added: analysis.sleep_added,
+    languages: analysis.languages,
   };
   const empty = diff.trim().length === 0;
   const state = {
@@ -121,7 +143,8 @@ export function collectDiff(input: {
     base,
     stats: truncate((stat.stdout || "").trim() || "(no --stat)", 4000),
     files,
-    heuristics: {
+    static_analysis: {
+      languages: metrics.languages,
       timeout_bumps: metrics.timeout_bumps,
       skip_added: metrics.skip_added,
       empty_catch: metrics.empty_catch,
@@ -132,28 +155,6 @@ export function collectDiff(input: {
     diff_excerpt: truncate(diff, 12000),
   };
   return { metrics, state, empty };
-}
-
-function parseNumstat(
-  text: string,
-): { path: string; added: number; removed: number }[] {
-  const rows: { path: string; added: number; removed: number }[] = [];
-  for (const line of text.split("\n")) {
-    const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
-    if (!m) continue;
-    rows.push({
-      path: m[3]!.trim(),
-      added: m[1] === "-" ? 0 : Number(m[1]),
-      removed: m[2] === "-" ? 0 : Number(m[2]),
-    });
-  }
-  return rows;
-}
-
-export function isCodeFile(name: string): boolean {
-  return /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|cs|rb|php|swift|scala|vue|svelte)$/i.test(
-    name,
-  );
 }
 
 const BUCKETS: Record<string, string[]> = {
@@ -199,46 +200,6 @@ function bucketOf(spec: string): string {
   return "other";
 }
 
-export function extractImports(source: string): string[] {
-  const specs: string[] = [];
-  const re =
-    /(?:import(?:\s+type)?\s+[\s\S]*?\sfrom\s+|require\(|from\s+|import\s+)['"]([^'"]+)['"]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(source))) specs.push(m[1]!);
-  return specs;
-}
-
-export function extractFunctions(source: string): {
-  name: string;
-  approx_lines: number;
-}[] {
-  const lines = source.split("\n");
-  const starts: { name: string; line: number }[] = [];
-  const patterns: [RegExp, number][] = [
-    [/^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)/, 1],
-    [/^\s*(?:export\s+)?class\s+(\w+)/, 1],
-    [/^\s*def\s+(\w+)/, 1],
-    [/^\s*func\s+(\w+)/, 1],
-    [/^\s*(?:export\s+)?(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(/, 1],
-  ];
-  lines.forEach((line, i) => {
-    for (const [re, g] of patterns) {
-      const m = line.match(re);
-      if (m) {
-        starts.push({ name: m[g]!, line: i });
-        break;
-      }
-    }
-  });
-  return starts
-    .map((s, i) => ({
-      name: s.name,
-      approx_lines: (starts[i + 1]?.line ?? lines.length) - s.line,
-    }))
-    .sort((a, b) => b.approx_lines - a.approx_lines)
-    .slice(0, 8);
-}
-
 export function looksGenerated(source: string, filePath: string): boolean {
   const base = path.basename(filePath).toLowerCase();
   if (/\.(pb|gen|generated)\./.test(base) || base.endsWith(".lock")) return true;
@@ -251,7 +212,7 @@ export function collectFile(input: {
   file: string;
   diffExcerpt?: string;
 }): {
-  metrics: import("../types.js").FileMetrics;
+  metrics: FileMetrics;
   state: Record<string, unknown>;
 } {
   const abs = path.resolve(input.cwd, input.file);
@@ -266,10 +227,9 @@ export function collectFile(input: {
   for (const s of siblings) {
     moduleLoc += fs.readFileSync(path.join(dir, s), "utf8").split("\n").length;
   }
-  const functions = extractFunctions(source);
-  const imports = extractImports(source);
+  const ast = analyzeSource(abs, source);
   const import_buckets: Record<string, number> = {};
-  for (const spec of imports) {
+  for (const spec of ast.imports) {
     const b = bucketOf(spec);
     import_buckets[b] = (import_buckets[b] ?? 0) + 1;
   }
@@ -282,28 +242,28 @@ export function collectFile(input: {
   );
   if (log.ok) churn = log.stdout.split("\n").filter(Boolean).length;
 
-  const classCount = (source.match(/^\s*(?:export\s+)?class\s+/gm) ?? []).length;
-  const metrics = {
+  const metrics: FileMetrics = {
     path: path.relative(input.cwd, abs).replaceAll("\\", "/"),
     loc,
     module_dir: path.relative(input.cwd, dir).replaceAll("\\", "/") || ".",
     module_file_count: siblings.length,
     module_loc: moduleLoc,
     share_of_module: moduleLoc === 0 ? 1 : loc / moduleLoc,
-    function_count: functions.length,
-    class_count: classCount,
-    top_functions: functions.slice(0, 5),
+    function_count: ast.functions.length,
+    class_count: ast.class_count,
+    top_functions: ast.functions.slice(0, 5),
     import_buckets,
     import_bucket_diversity: diversity,
     looks_generated: looksGenerated(source, abs),
     churn_90d_commits: churn,
+    language: ast.language,
   };
 
   const state = {
     task: "Judge whether this file is a god file / concentration problem.",
     metrics,
     head: truncate(source, 2500),
-    exports_or_defs: functions.slice(0, 12).map((f) => f.name),
+    exports_or_defs: ast.functions.slice(0, 12).map((f) => f.name),
     diff_excerpt: input.diffExcerpt ? truncate(input.diffExcerpt, 4000) : null,
   };
   return { metrics, state };

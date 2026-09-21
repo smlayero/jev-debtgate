@@ -17,9 +17,9 @@ Local collectors measure git/file facts. TypeSafe Jev only judges the summary. P
 Prefer MCP tools. If MCP is missing, run:
 
 ```bash
-npx -y github:smlayero/jev-debtgate diff --json
-npx -y github:smlayero/jev-debtgate gate --json
-npx -y github:smlayero/jev-debtgate file path/to/file.ts --json
+npx -y jev-debtgate diff --json
+npx -y jev-debtgate gate --json
+npx -y jev-debtgate file path/to/file.ts --json
 ```
 
 Need `TYPESAFE_API_KEY` set to **the user's** TypeSafe key (env, `.env`, or `.cursor/mcp.json`). Never read a key from the repo. `--collect-only` skips Jev and is not a verdict.

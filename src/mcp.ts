@@ -10,7 +10,7 @@ export async function startMcpServer(): Promise<void> {
   loadDotEnv();
   const server = new McpServer({
     name: "jev-debtgate",
-    version: "0.2.0",
+    version: "0.3.0",
   });
 
   function text(data: unknown) {

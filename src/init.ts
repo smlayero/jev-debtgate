@@ -5,7 +5,7 @@ const MCP_FALLBACK = `{
   "mcpServers": {
     "jev-debtgate": {
       "command": "npx",
-      "args": ["-y", "github:smlayero/jev-debtgate", "mcp"],
+      "args": ["-y", "jev-debtgate", "mcp"],
       "env": {
         "TYPESAFE_API_KEY": ""
       }

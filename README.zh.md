@@ -31,7 +31,7 @@ jev-debtgate 不问「代码好不好看」，只问流程里能执行的问题�
 
 **1. 在你的机器上采集事实**
 
-行数、import 种类、函数大小、90 天 churn，以及跳过测试、空 `catch`、SQL 拼接、只加长测试 timeout 而生产代码没动等模式。不会上传整个仓库。
+用 [ast-grep](https://ast-grep.github.io) 对改动过的文件做 AST 分析，而不是对 diff 做行级正则。TypeScript/JavaScript 是内置语法；Python、Go、Rust、Java、Kotlin、C#、Ruby、PHP、Swift、Scala、C、C++ 作为额外语法注册。会抓跳过的测试、空 `catch` / 吞掉的错误、SQL 拼接、类型逃逸、以及只加长测试 timeout 而生产代码没动。函数大小和 import 种类也来自语法树。不会上传整个仓库。
 
 **2. 每次向 Jev 问同一组问题**
 
@@ -70,7 +70,7 @@ jev-debtgate 不问「代码好不好看」，只问流程里能执行的问题�
 ### 1. 在你的仓库里一条命令
 
 ```bash
-npx -y github:smlayero/jev-debtgate init
+npx -y jev-debtgate init
 ```
 
 会写入：
@@ -84,7 +84,7 @@ npx -y github:smlayero/jev-debtgate init
 
 ```bash
 cp .cursor/mcp.json.example .cursor/mcp.json
-npx -y github:smlayero/jev-debtgate doctor
+npx -y jev-debtgate doctor
 ```
 
 不要提交 `.env` 或 `.cursor/mcp.json`。
@@ -98,7 +98,7 @@ npx -y github:smlayero/jev-debtgate doctor
   "mcpServers": {
     "jev-debtgate": {
       "command": "npx",
-      "args": ["-y", "github:smlayero/jev-debtgate", "mcp"],
+      "args": ["-y", "jev-debtgate", "mcp"],
       "env": {
         "TYPESAFE_API_KEY": ""
       }
@@ -118,11 +118,11 @@ npx -y github:smlayero/jev-debtgate doctor
 ### 3. 命令行
 
 ```bash
-npx -y github:smlayero/jev-debtgate diff
-npx -y github:smlayero/jev-debtgate diff --base origin/main --json
-npx -y github:smlayero/jev-debtgate gate --shadow --fail-open
-npx -y github:smlayero/jev-debtgate file src/app.ts
-npx -y github:smlayero/jev-debtgate doctor
+npx -y jev-debtgate diff
+npx -y jev-debtgate diff --base origin/main --json
+npx -y jev-debtgate gate --shadow --fail-open
+npx -y jev-debtgate file src/app.ts
+npx -y jev-debtgate doctor
 ```
 
 | 退出码 | 含义 |

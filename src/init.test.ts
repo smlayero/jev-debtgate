@@ -23,7 +23,7 @@ test("init writes MCP example, skill, config, and CI workflow once", () => {
     true,
   );
   const mcp = fs.readFileSync(path.join(cwd, ".cursor", "mcp.json.example"), "utf8");
-  assert.match(mcp, /github:smlayero\/jev-debtgate/);
+  assert.match(mcp, /jev-debtgate/);
   const second = initProject({ cwd, root });
   assert.ok(second.some((line) => line.includes("skip") && line.includes("exists")));
 });

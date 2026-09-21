@@ -1,6 +1,8 @@
 export { assessDiff, assessFile, assessGate } from "./assess.js";
 export { decideDiff, decideFile, decideGate, exitCode } from "./policy.js";
-export { collectDiff, collectFile, analyzeDiffText } from "./collect/git.js";
+export { collectDiff, collectFile } from "./collect/git.js";
+export { analyzeSource, compareSources } from "./collect/ast.js";
+export { langForFile } from "./collect/langs.js";
 export { DIFF_QUESTIONS, FILE_QUESTIONS, GATE_QUESTIONS } from "./packs.js";
 export { requireApiKey, isPlaceholderKey, maskKey } from "./env.js";
 export { loadConfig, mergeRunOptions } from "./config.js";

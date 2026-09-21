@@ -90,12 +90,12 @@ export function decideDiff(
     reasons,
     (kind?.choice === "security" && (kind.confidence ?? 0) >= 0.6) ||
       metrics.sql_concat.length > 0,
-    "security-shaped debt in diff or SQL concatenation heuristic",
+      "security-shaped debt in diff or SQL concatenation",
   );
   push(
     reasons,
     heuristicHit && (workaround?.noul ?? 0) >= 0.45,
-    `collector heuristics: ${summarizeHeuristics(metrics)}`,
+    `static analysis: ${summarizeFindings(metrics)}`,
   );
   push(
     reasons,
@@ -234,7 +234,7 @@ export function decideGate(
   push(
     reasons,
     metrics.timeout_bumps.length + metrics.skip_added.length + metrics.sleep_added.length > 0,
-    summarizeHeuristics(metrics),
+    summarizeFindings(metrics),
   );
 
   let action: Action = "allow";
@@ -259,7 +259,7 @@ export function decideGate(
   };
 }
 
-function summarizeHeuristics(metrics: DiffMetrics): string {
+function summarizeFindings(metrics: DiffMetrics): string {
   const parts = [
     metrics.timeout_bumps.length ? `timeout=${metrics.timeout_bumps.length}` : "",
     metrics.skip_added.length ? `skip=${metrics.skip_added.length}` : "",
@@ -268,7 +268,7 @@ function summarizeHeuristics(metrics: DiffMetrics): string {
     metrics.type_escape.length ? `type_escape=${metrics.type_escape.length}` : "",
     metrics.sleep_added.length ? `sleep=${metrics.sleep_added.length}` : "",
   ].filter(Boolean);
-  return parts.join(", ") || "no collector heuristics";
+  return parts.join(", ") || "no static-analysis hits";
 }
 
 export function exitCode(action: Action): number {

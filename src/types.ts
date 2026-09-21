@@ -61,6 +61,7 @@ export type DiffMetrics = {
   sql_concat: string[];
   type_escape: string[];
   sleep_added: string[];
+  languages?: string[];
 };
 
 export type FileMetrics = {
@@ -77,6 +78,7 @@ export type FileMetrics = {
   import_bucket_diversity: number;
   looks_generated: boolean;
   churn_90d_commits: number | null;
+  language?: string;
 };
 
 export type Report = {
