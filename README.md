@@ -1,57 +1,92 @@
 # jev-debtgate
 
-[中文文档](README.zh.md)
+English · [中文](README.zh.md)
 
-Sonar will tell you a file is 3000 lines. **jev-debtgate** tells you whether that is a god file or generated code, whether this PR is paying debt down or hiding a flake, and whether a cheap model is allowed to touch it.
+A gate for **technical debt**.
 
-Local collectors gather git/file **facts**. [TypeSafe Jev](https://typesafe.ai) only returns typed probabilities. Policy in this repo maps confidence to `allow | review | block`.
+Coding agents write code quickly. They also leave timeout bumps, SQL string concat, and “one more function” in a file that already does too much. **jev-debtgate** exists to stop that from being called a cleanup.
 
-This is an MCP server + CLI (with a Cursor skill). It is not an editor highlighter.
+It looks at a diff or a file and answers a few questions your process actually needs:
 
-**Bring your own TypeSafe key.** This project never ships an API key. Copy `.env.example` to `.env` or set `TYPESAFE_API_KEY` yourself. Do not commit `.env` or `.cursor/mcp.json`.
+- Are we paying debt down, or adding more?
+- Is this a real fix, or a workaround that hides the symptom?
+- Is this file a pile of mixed responsibilities, generated output, or something we should leave alone?
+- If work continues, should a cheap model keep going, or do we need a stronger one?
+
+The verdict is `allow`, `review`, or `block`. Code does not merge itself on a guess.
+
+---
+
+## How it thinks
+
+1. **Facts stay local.** Line counts, import mix, git churn, and patterns like skipped tests or concatenated SQL are collected on your machine. The full repo is not uploaded.
+2. **Judgment goes to [TypeSafe Jev](https://typesafe.ai).** Jev is a decision model: you send state plus typed questions, and you get probabilities—not a review essay.
+3. **Policy is ours.** Confidence decides the gate. A high-confidence workaround is blocked. Generated files are not “split as debt pay-down.” If the important questions are uncertain, the result is `review`, not an automatic refactor.
+
+Use `verdict.action` and `confidence_floor`. Do not ship on the first-ranked `choice` alone.
+
+---
 
 ## Install
 
+Bring **your own** TypeSafe API key. This repository never includes one.
+
 ```bash
+git clone https://github.com/smlayero/jev-debtgate.git
+cd jev-debtgate
 npm install
 npm run build
-cp .env.example .env   # then paste YOUR key from https://console.typesafe.ai
+cp .env.example .env    # paste your key from https://console.typesafe.ai
 npx jev-debtgate doctor
 ```
 
-The CLI binary is also available as `debtgate`.
+Do not commit `.env` or `.cursor/mcp.json`. The CLI is also available as `debtgate`.
 
-### CLI
+---
+
+## Commands
 
 ```bash
-npx jev-debtgate diff                  # staged+unstaged vs HEAD
+npx jev-debtgate diff                     # current uncommitted diff vs HEAD
 npx jev-debtgate diff --base origin/main --json
-npx jev-debtgate gate                  # workaround / fake-fix gate
-npx jev-debtgate file src/app.ts
+npx jev-debtgate gate                     # fake-fix / workaround gate
+npx jev-debtgate file src/app.ts          # god-file / concentration
 npx jev-debtgate file src/app.ts --collect-only
-npx jev-debtgate init                  # copy skill + mcp.json.example
+npx jev-debtgate init
 npx jev-debtgate doctor
 ```
 
-Exit codes: `0` allow, `1` review, `2` block, `3` error.
+| Exit code | Meaning |
+| --- | --- |
+| `0` | allow |
+| `1` | review |
+| `2` | block |
+| `3` | error (missing key, not a git repo, …) |
 
-### Cursor MCP
+`--collect-only` runs collectors without Jev. That is measurement, not a verdict.
 
-Copy `.cursor/mcp.json.example` to `.cursor/mcp.json` (gitignored) and paste **your** key into `env.TYPESAFE_API_KEY`. Point `args` at this repo’s `dist/mcp.js` after `npm run build`.
+---
 
-Tools:
+## In Cursor
 
-| Tool | When |
-|---|---|
-| `debt_assess_diff` | Before you claim a refactor is done or open a PR |
-| `debt_workaround_gate` | Tests just went green after a tiny change |
-| `debt_assess_file` | Code is piled into one file / you want to split it |
+1. `npm run build`
+2. Copy `.cursor/mcp.json.example` → `.cursor/mcp.json`
+3. Put **your** key in `env.TYPESAFE_API_KEY`
+4. Point `args` at this repo’s `dist/mcp.js`
 
-The project skill `.cursor/skills/debtgate/SKILL.md` tells the agent to honor `verdict.action` instead of Jev’s argmax.
+| Tool | Call it when |
+| --- | --- |
+| `debt_assess_diff` | Before you say the refactor is done, or before a PR |
+| `debt_workaround_gate` | Tests just turned green after a tiny change |
+| `debt_assess_file` | Most of a module lives in one file, or you are about to split it |
 
-### GitHub Action
+The skill in `.cursor/skills/debtgate/SKILL.md` tells the agent to obey the gate.
 
-Callers pass **their** secret. The action fails if `api-key` is empty.
+---
+
+## In GitHub Actions
+
+Pass **your** repository secret. An empty `api-key` fails the job.
 
 ```yaml
 - uses: actions/setup-node@v4
@@ -64,42 +99,40 @@ Callers pass **their** secret. The action fails if `api-key` is empty.
     base: ${{ github.event.pull_request.base.sha }}
 ```
 
-## How it decides
+---
 
-1. **Collect** (no Jev): diff stats, timeout/skip/SQL/empty-catch heuristics, loc, import buckets, function sizes, 90-day churn.
-2. **Ask Jev** (`tech-debt.v1` pack): direction, debt kind, workaround, god-file kind, split axis, model tier.
-3. **Policy**: high-confidence workaround → `block`; generated/data tables → do not split; low confidence on the *decision* questions → `review`, never auto-split.
+## Examples in this repo
 
-Do not ship on `choice` alone. Honor `verdict.action` and `confidence_floor`.
-
-## Examples
-
-- `examples/god-file/src/kitchen-sink.ts` — HTTP + SQL + Stripe + Slack in one file
-- `examples/timeout-workaround` — test timeout bump with no production fix
-- `examples/generated/api.gen.ts` — generated blob; do not hand-split
+| Path | What it is for |
+| --- | --- |
+| `examples/god-file/src/kitchen-sink.ts` | HTTP, SQL, payments, and a queue in one file |
+| `examples/timeout-workaround` | Test timeout raised; production code unchanged |
+| `examples/generated/api.gen.ts` | Generated output—do not treat as a split target |
 
 ```bash
 npx jev-debtgate file examples/god-file/src/kitchen-sink.ts --collect-only --json
 ```
 
-## Config
+---
 
-| Env | Default | Meaning |
-|---|---|---|
-| `TYPESAFE_API_KEY` | required | Your TypeSafe key |
+## Environment
+
+| Variable | Default | Role |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | (required) | Your TypeSafe key |
 | `JEV_MODEL` | `jev-latest` | Model alias |
 | `DEBTGATE_AUTO` | `0.85` | Auto-allow floor |
 | `DEBTGATE_REVIEW` | `0.5` | Below this, review |
-| `DEBTGATE_CWD` | process cwd | MCP working tree |
-
-## Develop
+| `DEBTGATE_CWD` | process cwd | Working tree for MCP |
 
 ```bash
-npm test          # policy + collectors + secret scan (no API key)
-npm run live      # optional real Jev e2e; needs YOUR TYPESAFE_API_KEY
+npm test          # unit tests + secret scan; no API key
+npm run live      # optional live Jev checks; needs your key
 ```
 
-Never commit a key. `npm test` fails if a TypeSafe-looking `apikey_` hex string is in the tree.
+`npm test` fails if a TypeSafe-looking key is committed.
+
+---
 
 ## License
 
