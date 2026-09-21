@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+.cursor/mcp.json
+*.log
+.DS_Store
+coverage/
+

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "debtgate": {
+      "command": "node",
+      "args": ["dist/mcp.js"],
+      "env": {
+        "TYPESAFE_API_KEY": ""
+      }
+    }
+  }
+}

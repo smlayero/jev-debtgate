@@ -1,0 +1,46 @@
+name: Debtgate
+description: Jev-powered technical debt gate on pull requests
+author: jev-debtgate
+
+inputs:
+  api-key:
+    description: Your TypeSafe API key (never a committed secret)
+    required: true
+  base:
+    description: git diff base (commit SHA or ref)
+    required: false
+    default: HEAD^
+  command:
+    description: diff | gate
+    required: false
+    default: diff
+  collect-only:
+    description: "If true, skip Jev (collectors only)"
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Build Debtgate
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm install --omit=dev
+        npm run build
+    - name: Run Debtgate
+      shell: bash
+      env:
+        TYPESAFE_API_KEY: ${{ inputs.api-key }}
+      run: |
+        if [ -z "${TYPESAFE_API_KEY}" ]; then
+          echo "api-key input is empty. Set secrets.TYPESAFE_API_KEY to YOUR key."
+          exit 3
+        fi
+        CMD="${{ inputs.command }}"
+        BASE="${{ inputs.base }}"
+        EXTRA=""
+        if [ "${{ inputs.collect-only }}" = "true" ]; then
+          EXTRA="--collect-only"
+        fi
+        node "${{ github.action_path }}/dist/cli.js" "$CMD" --base "$BASE" --format github $EXTRA
